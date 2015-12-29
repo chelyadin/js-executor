@@ -1,21 +1,15 @@
 package com.cva;
 
 import java.io.IOException;
-import java.net.HttpRetryException;
-import java.util.HashMap;
 import java.util.Iterator;
-import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
@@ -24,12 +18,11 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 
-import com.sun.research.ws.wadl.Response;
 
 /**
  * Class is a RootResource. It contains Thread Pool for running several
  * JavaScripts in different threads. Runs like
- * "127.0.0.1:8080/JsExecutor/api/execute/". JavaScript sends like a parameter
+ * "127.0.0.1:8080/js-executor/api/execute/". JavaScript sends like a parameter
  * inside POST method body
  * 
  * @author CVA
@@ -46,7 +39,7 @@ public class JsApiService {
 	// Testing method, not complete in use
 	@GET
 	@Produces(MediaType.TEXT_PLAIN)
-	public String sayPlainTextHello() {
+	public String getScriptsStatus() {
 	
 		Set<Entry<HttpServletRequest, Future<Object>>> set = poolMap.getScriptMap().entrySet();
 		Iterator<Entry<HttpServletRequest, Future<Object>>> iter = set.iterator();
