@@ -1,13 +1,24 @@
 package com.cva;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.security.Principal;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.Map.Entry;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import javax.servlet.RequestDispatcher;
+import javax.servlet.ServletInputStream;
 import javax.servlet.http.*;
 
 /**
@@ -47,26 +58,35 @@ public class ScriptThreadPoolMap {
 
 	}
 
-	// Getter of JavaScript calculation result
+	// Getter for JavaScript calculation result
 	synchronized public Future<Object> getScriptResult(
 			HttpServletRequest request) {
 		Future<Object> future = scriptMap.get(request);
-		if (future.isDone()){
+		if (future.isDone()) {
 			scriptMap.remove(request);
 		}
-		System.out.println("scriptMap.size(): " + scriptMap.size());
-		
+
 		return future;
 	}
 
-	// Getter for testing goals. Have to be deleted.
+	// Setter that removes Thread calculated script
+	synchronized public void removeScript(HttpServletRequest request) {
+		scriptMap.remove(request);
+	}
+
+	// Getter for testing goals. Has to be deleted.
 	public ExecutorService getExecutorService() {
 		return executorService;
 	}
-	
-	// Getter for testing goals. Have to be deleted.
-	public Map<HttpServletRequest, Future<Object>> getScriptMap(){
-		return scriptMap;
+
+	// Getter for testing goals. Has to be deleted.
+	public Iterator<Entry<HttpServletRequest, Future<Object>>> getScriptsIterator() {
+		Set<Entry<HttpServletRequest, Future<Object>>> set = scriptMap
+				.entrySet();
+		Iterator<Entry<HttpServletRequest, Future<Object>>> iterator = set
+				.iterator();
+
+		return iterator;
 	}
 
 	private ExecutorService executorService;

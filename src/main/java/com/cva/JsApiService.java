@@ -18,7 +18,6 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 
-
 /**
  * Class is a RootResource. It contains Thread Pool for running several
  * JavaScripts in different threads. Runs like
@@ -38,17 +37,22 @@ public class JsApiService {
 
 	// Testing method, not complete in use
 	@GET
+	@Path("/getScriptsStatus")
 	@Produces(MediaType.TEXT_PLAIN)
 	public String getScriptsStatus() {
-	
-		Set<Entry<HttpServletRequest, Future<Object>>> set = poolMap.getScriptMap().entrySet();
-		Iterator<Entry<HttpServletRequest, Future<Object>>> iter = set.iterator();
+
+		Iterator<Entry<HttpServletRequest, Future<Object>>> iterator = poolMap
+				.getScriptsIterator();
+
 		StringBuilder sb = new StringBuilder();
-		while(iter.hasNext()){
-			Entry<HttpServletRequest, Future<Object>> entry = iter.next();
-			sb.append(entry.getKey() + " - " + (entry.getValue().isDone() ? "Done":"Not Done") + "\n");
+		int i = 1;
+		while (iterator.hasNext()) {
+			Entry<HttpServletRequest, Future<Object>> entry = iterator.next();
+			sb.append(i + " - " + entry.getKey() + " - "
+					+ (entry.getValue().isDone() ? "Done" : "Undone") + "\n");
+			i++;
 		}
-		System.out.println("---\n" +sb.toString());
+		// System.out.println("---\n" + sb.toString());
 		return sb.toString();
 	}
 
@@ -80,18 +84,19 @@ public class JsApiService {
 
 			try {
 				resultObject = resultFuture.get();
-			} catch (InterruptedException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			} catch (ExecutionException e) {
+			} catch (InterruptedException | ExecutionException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
 
+			// Removing executed scripts
+			if (resultFuture.isDone())
+				poolMap.removeScript(request);
+
 			if (resultObject != null)
 				resultString = resultObject.toString();
 
-			return resultString != null ? resultString : String
+			return resultString != null ? resultString : "Error. Status: " + String
 					.valueOf(HttpServletResponse.SC_BAD_REQUEST);
 
 		} catch (IOException e) {
@@ -102,7 +107,7 @@ public class JsApiService {
 		}
 		// return "-1";
 		response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-		return String.valueOf(HttpServletResponse.SC_BAD_REQUEST);
+		return "Error. Status: " + String.valueOf(HttpServletResponse.SC_BAD_REQUEST);
 	}
 
 	@Context
