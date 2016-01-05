@@ -1,11 +1,12 @@
 package com.cva;
 
+
 import java.util.concurrent.Callable;
 
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
-import javax.servlet.http.HttpServletRequest;
+
 
 /**
  * Class implements Callable interface, method call() returns Object which is a
@@ -17,7 +18,7 @@ import javax.servlet.http.HttpServletRequest;
  */
 public class ScriptExecutor implements Callable<Object> {
 
-	public ScriptExecutor(HttpServletRequest request, String javascript) {
+	public ScriptExecutor(String javascript) {
 		// TODO Auto-generated constructor stub
 		this.javascript = javascript;
 	}
@@ -27,25 +28,29 @@ public class ScriptExecutor implements Callable<Object> {
 		// TODO Auto-generated method stub
 		ScriptEngineManager engineManager = new ScriptEngineManager();
 		ScriptEngine engine = engineManager.getEngineByName("nashorn");
-		
-		
+
 		// Part for long calculation emulation Start-->
 		try {
-			Thread.sleep(10000);
+			Thread.sleep(15000);
 		} catch (InterruptedException e1) {
 			// TODO Auto-generated catch block
 			e1.printStackTrace();
 		}
 		// Part for long calculation emulation -->End
-		
-		
+
+		Object resultObject;
+
 		try {
-			return engine.eval(javascript);
+			// Try to return String
+			resultObject = engine.eval(javascript);
 		} catch (ScriptException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
+			// If exception happened then return Exception
+			resultObject = e;
 		}
-		return null;
+
+		return resultObject;
 	}
 
 	String javascript;
