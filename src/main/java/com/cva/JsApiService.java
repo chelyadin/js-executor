@@ -1,10 +1,10 @@
 package com.cva;
 
 
+import java.io.IOException;
 import java.util.Iterator;
 import java.util.Map.Entry;
 import java.util.UUID;
-import java.util.concurrent.Future;
 
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
@@ -13,13 +13,12 @@ import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.container.AsyncResponse;
-import javax.ws.rs.container.Suspended;
+
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
-import org.glassfish.jersey.server.ManagedAsync;
+import org.glassfish.jersey.server.ChunkedOutput;
+
 
 
 
@@ -50,24 +49,23 @@ public class JsApiService {
 	 * @param asyncResponse
 	 */
 	@GET
-	@ManagedAsync
 	@Path("/script/")
 	@Produces("text/xml")
-	public void getScriptsStatus(@Suspended final AsyncResponse asyncResponse) {
+	public Response getScriptsStatus() {
 
-		Iterator<Entry<UUID, Future<Object>>> iterator = scriptThreadPoolMap
+		Iterator<Entry<UUID, FutureKeeper>> iterator = scriptThreadPoolMap
 				.getScriptsIterator();
 
 		StringBuilder sb = new StringBuilder("<?xml version=\"1.0\"?>"
 				+ "<links>");
 		while (iterator.hasNext()) {
-			Entry<UUID, Future<Object>> entry = iterator.next();
+			Entry<UUID, FutureKeeper> entry = iterator.next();
 			sb.append("<link><uuid>" + entry.getKey() + "</uuid><status>"
-					+ (entry.getValue().isDone() ? "Done" : "Undone")
+					+ (entry.getValue().getFuture().isDone() ? "Done" : "Undone")
 					+ "</status></link>");
 		}
 		sb.append("</links>");
-		asyncResponse.resume(sb.toString());
+		return Response.status(Status.OK).entity(sb.toString()).build();
 	}
 
 	/**
@@ -76,46 +74,46 @@ public class JsApiService {
 	 * @param uuidString
 	 */
 	@GET
-	@ManagedAsync
 	@Path("/script/{uuidString}")
 	@Produces("text/xml")
-	public void getScript(@Suspended final AsyncResponse asyncResponse,
-			@PathParam("uuidString") String uuidString) {
+	public Response getScript(@PathParam("uuidString") String uuidString) {
 
 		String statusString = null;
 		String responseString = null;
+		boolean isExists = scriptThreadPoolMap.isScriptExist(UUID
+				.fromString(uuidString));
 		boolean isDone = scriptThreadPoolMap.isScriptDone(UUID
 				.fromString(uuidString));
 
 		// Building statusString
-		if (isDone) {
-			if (scriptThreadPoolMap
-					.getScriptResult(UUID.fromString(uuidString)) instanceof Exception) {
-				statusString = "Finished with exception";
-			} else {
-				statusString = "Done";
-			}
-
+		if (!isExists){
+			statusString = "Not exists";
 		} else {
-			statusString = "Undone";
+				if (isDone) {
+					statusString = "Done";
+			} else {
+				statusString = "Undone";
+			}
 		}
-
+		
 		// Building responseString
 		responseString = "<?xml version=\"1.0\"?>"
 				+ "<script><status>"
 				+ statusString
-				+ "</status><result>"
+				+ "</status><output>"
 				+ (isDone ? scriptThreadPoolMap.getScriptResult(UUID
-						.fromString(uuidString)) : "") + "</result></script>";
+						.fromString(uuidString)) : "") + "</output></script>";
 
-		asyncResponse.resume(responseString);
+		return Response.status(Status.OK).entity(responseString).build();
 	}
+	
 	
 	/**
 	 * Method takes a JavaScript string as a parameter from POST method body
 	 * @param body
 	 * @return Response with appropriate status and message
 	 */
+	
 	@POST
 	@Path("/script")
 	@Consumes("text/plain")
@@ -129,98 +127,67 @@ public class JsApiService {
 		UUID uuid = UUID.randomUUID();
 		
 		// Registering request and JavaScript into poolMat for calculating
-		scriptThreadPoolMap.registerScript(uuid, body);
+		scriptThreadPoolMap.registerScript(uuid, body, new ChunkedWriter(new ChunkedOutput<String>(String.class)));
 		return Response.status(Status.ACCEPTED).entity("<location>script/" + uuid + "</location>").type("text/xml").build();
 	}
 
 
-/*
 	@POST
-	@ManagedAsync 
-	@Path("/script")
+	@Path("/script/blocking")
 	@Consumes("text/plain")
 	@Produces("text/xml")
-	public void executeJsString(@Suspended final AsyncResponse asyncResponse,
-			@QueryParam("blocking") String blocking,
-			String body) {
-
-		// If a body is empty then return an error BAD_REQUEST
-//		if (body.equals(""))
-//			return Response.status(Status.BAD_REQUEST).entity("Empty script").type("text/xml").build();
-
-		UUID uuid = UUID.randomUUID();
+    public ChunkedOutput<String> getChunkedResponse(String body) {
 		
-		// Registering request and JavaScript into poolMat for calculating
-		scriptThreadPoolMap.registerScript(uuid, body);
+        final ChunkedOutput<String> chunkedOutput = new ChunkedOutput<String>(String.class);
+
+        UUID uuid = UUID.randomUUID();
 		
-		String statusString = null;
-		String responseString = null;
-		boolean isDone = scriptThreadPoolMap.isScriptDone(uuid);
-
-		// Building statusString
-		if (isDone) {
-			if (scriptThreadPoolMap
-					.getScriptResult(uuid) instanceof Exception) {
-				statusString = "Finished with exception";
-			} else {
-				statusString = "Done";
-			}
-
-		} else {
-			statusString = "Undone";
+		try {
+			chunkedOutput.write("<script><uuid>" + uuid + "</uuid>"	+ "<output>");
+		} catch (IOException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
 		}
-
-		// Building responseString
-		responseString = "<?xml version=\"1.0\"?>"
-				+ "<script><status>"
-				+ statusString
-				+ "</status><result>"
-				+ scriptThreadPoolMap.getScriptResult(uuid) + "</result></script>";
-
-		asyncResponse.resume(responseString);
 		
-		//return Response.status(Status.ACCEPTED).entity("<location>script/" + uuid + "</location>").type("text/xml").build();
-	
-	}
-*/
-	
+		scriptThreadPoolMap.registerScript(uuid, body, new ChunkedWriter(chunkedOutput));
+		
+		return chunkedOutput;
+		
+    }
+ 
+
+	/**
+	 * 
+	 * @param uuidString
+	 * @return Response with status and body
+	 */
 	@DELETE
-	@ManagedAsync
 	@Path("/script/{uuidString}")
 	@Produces("text/xml")
-	public void delete(@Suspended final AsyncResponse asyncResponse,
-			@PathParam("uuidString") String uuidString) {
+	public Response delete(@PathParam("uuidString") String uuidString) {
 		String statusString = null;
-		String responseString = null;
+		boolean isExist = scriptThreadPoolMap.isScriptExist(UUID
+				.fromString(uuidString));
 		boolean isDone = scriptThreadPoolMap.isScriptDone(UUID
 				.fromString(uuidString));
-
+		
 		// Building statusString
-		if (isDone) {
-			if (scriptThreadPoolMap
-					.getScriptResult(UUID.fromString(uuidString)) instanceof Exception) {
-				statusString = "Finished with exception";
-			} else {
-				statusString = "Done";
-			}
-
+		if (!isExist){
+			statusString = "Not exists";
 		} else {
-			statusString = "Interrupted";
+				if (isDone) {
+					statusString = "Done";
+			} else {
+				statusString = "Undone";
+			}
 		}
-
-		// Building responseString
-		responseString = "<?xml version=\"1.0\"?>"
-				+ "<deleted><status>"
-				+ statusString
-				+ "</status><result>"
-				+ (isDone ? scriptThreadPoolMap.getScriptResult(UUID
-						.fromString(uuidString)) : "") + "</result></deleted>";
-
-		asyncResponse.resume(responseString);
-
-		scriptThreadPoolMap.removeScript(UUID.fromString(uuidString));
+		
+		String outputString = scriptThreadPoolMap.removeScript(UUID.fromString(uuidString));
+		return Response.status(Status.OK).
+				entity("<deleted><status>" + statusString + "</status><output>"
+						+ outputString + "</output></deleted>").type("text/xml").build();
 	}
-
+	
 	private ScriptThreadPoolMap scriptThreadPoolMap;
 
 }
