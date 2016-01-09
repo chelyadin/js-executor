@@ -1,15 +1,20 @@
 package com.cva;
 
+import java.io.IOException;
 import java.io.Writer;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
-import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+
+import javax.ws.rs.NotFoundException;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import jersey.repackaged.com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 /**
  * Singleton Contains ConcurrentHashMap<HttpServletRequest, Future<Object>> 
@@ -20,8 +25,12 @@ import java.util.concurrent.Future;
  */
 public class ScriptThreadPoolMap {
 	private ScriptThreadPoolMap() {
-		executorService = Executors.newCachedThreadPool();
-		scriptMap = new ConcurrentHashMap<UUID, FutureKeeper>();
+		executorService = Executors.newFixedThreadPool(1, 
+				new ThreadFactoryBuilder()
+				.setDaemon(true)
+				.setNameFormat("js-executor-pool-%d")
+				.build());
+		scriptMap = new ConcurrentHashMap<>();
 	}
 
 	/**
@@ -44,14 +53,19 @@ public class ScriptThreadPoolMap {
 	 * Registers scripts as value with key as uuid
 	 * @param uuid
 	 * @param javascript
+	 * @return FutureKeeper 
 	 */
-	public void registerScript(UUID uuid, String javascript, Writer writer) {
+	public FutureKeeper registerScript(String uuid, String javascript, Writer writer) {
 		ScriptExecutor scriptExecutor = new ScriptExecutor(javascript, writer);
+		// TODO - are you sure you get the right thread here?
 		Thread scriptExecutorThread = scriptExecutor.getThread();
 		
 		Future<Object> scriptFuture = executorService.submit(scriptExecutor);
 		
-		scriptMap.put(uuid, new FutureKeeper(scriptFuture, (ChunkedWriter)writer, scriptExecutorThread));
+		FutureKeeper futureKeeper = new FutureKeeper(uuid, javascript, scriptFuture, (ChunkedWriter)writer, scriptExecutorThread);
+		log.debug("registerScript " + futureKeeper);
+		scriptMap.put(uuid, futureKeeper);
+		return futureKeeper;
 	}
 
 	/**
@@ -59,9 +73,9 @@ public class ScriptThreadPoolMap {
 	 * @param uuid
 	 * @return Object calculation result
 	 */
-	public Object getScriptResult(UUID uuid) {
+	public Object getScriptResult(String uuid) {
 		
-		ChunkedWriter chunkedWriter = scriptMap.get(uuid).getChunkedWriter();
+		ChunkedWriter chunkedWriter = scriptMap.get(uuid).chunkedWriter;
 		String output = chunkedWriter.toString();
 		return output;
 		
@@ -84,19 +98,8 @@ public class ScriptThreadPoolMap {
 	 * @param uuid
 	 * @return boolean flag script existence
 	 */
-	public boolean isScriptExist(UUID uuid) {
-		Future<Object> future = null;
-		FutureKeeper futureKeeper = scriptMap.get(uuid);
-		if (futureKeeper!=null){
-			future = futureKeeper.getFuture();
-			if (future!=null){
-				return true;
-			} else {
-				return false;
-			}
-		} else {
-			return false;
-		}	
+	public boolean isScriptExist(String uuid) {
+		return scriptMap.containsKey(uuid);
 	}
 	
 	/**
@@ -104,57 +107,44 @@ public class ScriptThreadPoolMap {
 	 * @param uuid
 	 * @return  boolean calculation finished
 	 */
-	public boolean isScriptDone(UUID uuid) {
-		Future<Object> future = null;
+	public boolean isScriptDone(String uuid) {
 		FutureKeeper futureKeeper = scriptMap.get(uuid);
-		if (futureKeeper!=null){
-			future = futureKeeper.getFuture();
-		}
-		
-		if (future!=null){
-			return future.isDone();
-		} else {
-			return false;
-		}
-			
+		if (futureKeeper==null) throw new NotFoundException("Script not found: " + uuid);
+		return futureKeeper.future.isDone();
 	}
 
 	/**
 	 * Removes Thread calculated script
 	 * @param uuid
+	 * @throws IOException 
 	 */
-	public String removeScript(UUID uuid) {
+	public String removeScript(String uuid) throws IOException {
 		
 		Future<Object> future = null;
 		FutureKeeper futureKeeper = scriptMap.get(uuid);
-		if (futureKeeper!=null){
-			future = futureKeeper.getFuture();		ChunkedWriter chunkedWriter = scriptMap.get(uuid).getChunkedWriter();
-			String output = chunkedWriter.toString();
-			chunkedWriter.closeChunkedOutput();
-			future.cancel(true);
-			futureKeeper.stopScriptExecutorThread();
-			if (future.isCancelled()||future.isDone()){
-				scriptMap.remove(uuid);
-			}
-
-			return output;
-		} else {
-			return "Not exists";
+		if (futureKeeper==null) throw new NotFoundException("Script not found: " + uuid);
+		future = futureKeeper.future;
+		ChunkedWriter chunkedWriter = scriptMap.get(uuid).chunkedWriter;
+		String output = chunkedWriter.toString();
+		chunkedWriter.close();
+		future.cancel(true);
+		futureKeeper.stopScriptExecutorThread();
+		if (future.isCancelled()||future.isDone()){
+			scriptMap.remove(uuid);
 		}
-		
+		return output;
 	}
 
 	/**
 	 * Returns iterator from ConcurrentHashMap which contains futures
 	 * @return iterator from ConcurrentHashMap 
 	 */
-	public Iterator<Entry<UUID, FutureKeeper>> getScriptsIterator() {
-		Set<Entry<UUID, FutureKeeper>> set = scriptMap.entrySet();
-		Iterator<Entry<UUID, FutureKeeper>> iterator = set.iterator();
-		return iterator;
+	public Iterator<FutureKeeper> getScriptsIterator() {
+		return scriptMap.values().iterator();
 	}
 
 	private static volatile ScriptThreadPoolMap instance;
-	private volatile ExecutorService executorService;
-	private Map<UUID, FutureKeeper> scriptMap;
+	private final ExecutorService executorService;
+	private final Map<String, FutureKeeper> scriptMap;
+	final static Logger log = LoggerFactory.getLogger(ScriptThreadPoolMap.class);
 }

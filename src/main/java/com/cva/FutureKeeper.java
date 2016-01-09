@@ -2,28 +2,39 @@ package com.cva;
 
 import java.util.concurrent.Future;
 
-public class FutureKeeper {
-	public FutureKeeper(Future<Object> future, ChunkedWriter chunkedWriter,
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public final class FutureKeeper {
+	
+	transient static final Logger log = LoggerFactory.getLogger(FutureKeeper.class);
+
+	final ChunkedWriter chunkedWriter;
+	final Future<Object> future;
+	final String scriptBody;
+	final Thread scriptExecutorThread;
+	final String uuid;
+	
+	public FutureKeeper(String uuid, String scriptBody, Future<Object> future, ChunkedWriter chunkedWriter,
 			Thread scriptExecutorThread) {
+		this.uuid = uuid;
+		this.scriptBody = scriptBody;
 		this.future = future;
 		this.chunkedWriter = chunkedWriter;
 		this.scriptExecutorThread = scriptExecutorThread;
 	}
 
-	public Future<Object> getFuture() {
-		return future;
-	}
-
-	public ChunkedWriter getChunkedWriter() {
-		return chunkedWriter;
-	}
-
+	@SuppressWarnings("deprecation")
 	public void stopScriptExecutorThread() {
-		//if (scriptExecutorThread.isAlive())
-		//	scriptExecutorThread.stop();
+		if (scriptExecutorThread.isAlive()) {
+			log.debug("stopScriptExecutorThread " + scriptExecutorThread.getName());
+			scriptExecutorThread.stop();
+		}
 	}
-
-	private Future<Object> future;
-	private ChunkedWriter chunkedWriter;
-	private Thread scriptExecutorThread;
+	
+	@Override
+	public String toString() {
+		return "FutureKeeper [uuid=" + uuid + ", scriptBody=\n" + scriptBody + "\n, future=" + future
+				+ ", scriptExecutorThread=" + scriptExecutorThread + "]";
+	}
 }
