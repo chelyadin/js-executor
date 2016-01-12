@@ -9,6 +9,9 @@ import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Class implements Callable interface, method call() returns Object which is a
  * result of JavaScript execution by Naschorn. Source JavaScript sets in
@@ -24,15 +27,19 @@ public class ScriptExecutor implements Callable<Object> {
 	public ScriptExecutor(String javascript, Writer writer) {
 		this.javascript = javascript;
 		this.writer = writer;
+		this.callingThread = null;
 	}
 
 	public Thread getThread() {
-		// TODO try storing script's thread from call()
-		return Thread.currentThread();
+		return callingThread;
 	}
 
+	
 	@Override
-	public Object call() throws ScriptException, IOException {
+	public Object call() throws IOException { // throws ScriptException,
+
+		this.callingThread = Thread.currentThread();
+		log.debug("callingThread " + callingThread.getName());
 
 		try {
 			ScriptEngine engine = engineManager.getEngineByName("nashorn");
@@ -44,13 +51,18 @@ public class ScriptExecutor implements Callable<Object> {
 			context.setErrorWriter(writer);
 
 			engine.eval(javascript);
-
-			return writer.toString();
+		} catch (ScriptException e) {
+			((ChunkedWriter)writer).setFinishedWithException(true);
+			writer.write(e.getMessage());
 		} finally {
 			writer.close();
 		}
+		return writer;
+
 	}
 
 	final String javascript;
 	final Writer writer;
+	private Thread callingThread;
+	final static Logger log = LoggerFactory.getLogger(ScriptExecutor.class);
 }
